@@ -110,6 +110,11 @@ def parse_value(value: str):
         return value
 
 
+def goal_text_from_args(args: argparse.Namespace) -> str:
+    parts = ([args.id] if args.id else []) + list(args.text or [])
+    return " ".join(parts).strip()
+
+
 def cmd_goals(args: argparse.Namespace) -> int:
     state = MirrorState()
     if args.action == "list":
@@ -118,7 +123,11 @@ def cmd_goals(args: argparse.Namespace) -> int:
         return 0
 
     if args.action == "add":
-        goal = Goal(id=str(uuid.uuid4())[:8], text=args.text)
+        text = goal_text_from_args(args)
+        if not text:
+            print("Usage: mirror goals add <text>", file=sys.stderr)
+            return 1
+        goal = Goal(id=str(uuid.uuid4())[:8], text=text)
         state.save_goal(goal)
         try:
             store = build_store(state)
@@ -130,13 +139,21 @@ def cmd_goals(args: argparse.Namespace) -> int:
         print(goal.id)
         return 0
 
+    if not args.id:
+        print(f"Usage: mirror goals {args.action} <id> [text]", file=sys.stderr)
+        return 1
+
     goals = {goal.id: goal for goal in state.goals(active_only=False)}
     goal = goals.get(args.id)
     if not goal:
         print("Goal not found", file=sys.stderr)
         return 1
     if args.action == "edit":
-        goal.text = args.text
+        text = " ".join(args.text or []).strip()
+        if not text:
+            print("Usage: mirror goals edit <id> <text>", file=sys.stderr)
+            return 1
+        goal.text = text
     elif args.action == "remove":
         goal.active = False
     state.save_goal(goal)
@@ -195,8 +212,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     goals = sub.add_parser("goals")
     goals.add_argument("action", choices=["list", "add", "edit", "remove"])
-    goals.add_argument("id", nargs="?")
-    goals.add_argument("text", nargs="?")
+    goals.add_argument("id", nargs="?", help="goal id for edit/remove; first text token for add")
+    goals.add_argument("text", nargs=argparse.REMAINDER, help="remaining goal text")
     goals.set_defaults(func=cmd_goals)
 
     digest = sub.add_parser("digest")
