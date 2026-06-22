@@ -4,6 +4,126 @@ Mirror is a local Claude Code plugin that coaches how you use AI. It reads Claud
 
 The point is not shame. Mirror looks for evidence of patterns like delegation-first debugging, low observable verification, repeated orientation questions, and topic-depth regression, then nudges you toward using AI as a sparring partner.
 
+## Architecture
+
+### Core flow
+
+```mermaid
+flowchart TD
+  subgraph cc [Claude Code]
+    START["SessionStart first-run reminder"] --> ONBOARD["/mirror:onboard"]
+    H["Stop/SessionEnd hook cheap enqueue"] --> Q["SQLite dirty queue"]
+    CMD["/mirror commands"] --> ING
+  end
+  SCHED["user-controlled digest schedule"] --> ING
+  COACHSCHED["optional coach insight schedule"] --> COACH
+  Q --> ING
+  ING["digest.py: parallel net-new JSONL diff"] --> AN["analysis.py: specialist prompts + synthesis"]
+  AN -->|"observations + behavioral signals"| MEM[("mem0 adapter: Chroma local or Mem0 Cloud")]
+  EXP["/mirror:import-claude-export"] --> AN
+  COACH["coach.py"] -->|"temporal + multi-hop search"| MEM
+  COACH --> MD["~/.claude/coaching-sessions/*.md"]
+```
+
+### Signal detection → coaching
+
+```mermaid
+flowchart LR
+  subgraph detect [Transcript signals]
+    P["Prompt intent"]
+    T["Tool sequence patterns"]
+    A["Session arc / cognition order"]
+    D["Topic depth over time"]
+  end
+  subgraph analyze [analysis.py]
+    CL["Classifiers"]
+    OBS["Observations with signals"]
+  end
+  subgraph coach [coach.py]
+    NUDGE["Socratic nudges"]
+    GROW["Growth celebration"]
+    GOAL["Goal accountability"]
+  end
+  detect --> CL --> OBS --> MEM[(mem0)]
+  MEM --> coach
+```
+
+### Capture → promote → retrieve
+
+```mermaid
+flowchart LR
+  subgraph capture [1 Capture]
+    JSONL[TranscriptJSONL]
+    SLICE[TranscriptSlice]
+  end
+  subgraph promote [2 Promote]
+    ANALYSIS[analysis.py distill]
+    OBS[Observations]
+    SS[SessionSummary]
+    TOP[Topics]
+  end
+  subgraph mem0write [mem0 add]
+    FACT[factual memories]
+    EPI[episodic memories]
+    SEM[semantic memories]
+  end
+  subgraph retrieve [3 Retrieve]
+    COACH[coach.py search]
+    REPORT[CoachingReport]
+  end
+  JSONL --> SLICE --> ANALYSIS
+  ANALYSIS --> OBS --> FACT
+  ANALYSIS --> SS --> EPI
+  ANALYSIS --> TOP --> SEM
+  FACT --> COACH
+  EPI --> COACH
+  SEM --> COACH
+  COACH --> REPORT
+```
+
+### Parallel digestion
+
+```mermaid
+flowchart TD
+  HOOK["Stop/SessionEnd hook"] --> QUEUE["mirror.db dirty_sessions"]
+  SCAN["Transcript scanner"] --> CANDIDATES["changed transcript candidates"]
+  QUEUE --> PLAN["Build digestion plan"]
+  CANDIDATES --> PLAN
+  PLAN --> WORKERS["bounded parallel workers"]
+  WORKERS --> PARSE["parse net-new slice"]
+  PARSE --> SPECIALISTS["specialist LLM prompts"]
+  SPECIALISTS --> SYNTH["synthesis + dedup"]
+  SYNTH --> WRITE["memory_store.write"]
+  WRITE --> STATE["watermarks + mem0 id links"]
+```
+
+### Concurrency
+
+```mermaid
+flowchart TD
+  DIGEST[Digest run] --> SESSIONPOOL[Session worker pool]
+  SESSIONPOOL --> SA[Session A]
+  SESSIONPOOL --> SB[Session B]
+  SA --> A1[Intent specialist]
+  SA --> A2[Verification specialist]
+  SA --> A3[Topic specialist]
+  SA --> A4[Goal specialist]
+  SB --> B1[Intent specialist]
+  SB --> B2[Verification specialist]
+  A1 --> SEM[Global LLM semaphore]
+  A2 --> SEM
+  A3 --> SEM
+  A4 --> SEM
+  B1 --> SEM
+  B2 --> SEM
+  SEM --> ROUTER[LLMRouter]
+  ROUTER --> CLAUDE[Claude API]
+  ROUTER --> OLLAMA[Ollama]
+  CLAUDE --> SYNTH[Synthesis per session]
+  OLLAMA --> SYNTH
+  SYNTH --> WRITE[mem0 write]
+```
+
 ## Install for development
 
 ```bash
