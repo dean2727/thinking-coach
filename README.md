@@ -7,7 +7,8 @@ The point is not shame. Mirror looks for evidence of patterns like delegation-fi
 ## Install for development
 
 ```bash
-python3 -m pip install -e '.[dev]'
+python3 -m pip install --user uv
+python3 -m uv sync --extra dev
 ```
 
 Default local mode uses Chroma through OSS mem0. No `MEM0_API_KEY` is required unless you opt into Mem0 Cloud.
@@ -76,7 +77,7 @@ Each can use `claude/<model>` or `ollama/<model>`.
 ## Testing
 
 ```bash
-python3 -m pytest -q
+python3 -m uv run --extra dev pytest -q
 ```
 
 If the Claude CLI is installed:

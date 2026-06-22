@@ -7,5 +7,5 @@ allowed-tools: Bash
 View or change Mirror storage:
 
 ```bash
-PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/src" python3 "${CLAUDE_PLUGIN_ROOT}/src/mirror/cli.py" storage $ARGUMENTS
+python3 -m uv run --project "${CLAUDE_PLUGIN_ROOT}" mirror storage $ARGUMENTS
 ```

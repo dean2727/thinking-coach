@@ -7,5 +7,5 @@ allowed-tools: Bash
 Show Mirror status:
 
 ```bash
-PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/src" python3 "${CLAUDE_PLUGIN_ROOT}/src/mirror/cli.py" status
+python3 -m uv run --project "${CLAUDE_PLUGIN_ROOT}" mirror status
 ```

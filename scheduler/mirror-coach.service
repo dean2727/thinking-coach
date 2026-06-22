@@ -4,5 +4,4 @@ Description=Mirror scheduled coaching insight export
 [Service]
 Type=oneshot
 WorkingDirectory=/path/to/mirror
-Environment=PYTHONPATH=/path/to/mirror/src
-ExecStart=/usr/bin/python3 /path/to/mirror/src/mirror/cli.py coach --save
+ExecStart=/usr/bin/python3 -m uv run --project /path/to/mirror mirror coach --save
