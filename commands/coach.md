@@ -1,0 +1,11 @@
+---
+description: Generate an on-demand Mirror coaching report
+argument-hint: "[--save]"
+allowed-tools: Bash
+---
+
+Generate a Mirror coaching report:
+
+```bash
+PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/src" python3 "${CLAUDE_PLUGIN_ROOT}/src/mirror/cli.py" coach $ARGUMENTS
+```

@@ -1,0 +1,17 @@
+{
+  "name": "mirror",
+  "version": "0.1.0",
+  "description": "Local Claude Code coach that reflects on AI-use patterns and skill growth.",
+  "author": {
+    "name": "Mirror"
+  },
+  "commands": "./commands",
+  "hooks": "./hooks/hooks.json",
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "coaching",
+    "claude-code",
+    "metacognition"
+  ]
+}

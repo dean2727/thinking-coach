@@ -1,0 +1,14 @@
+{
+  "name": "mirror-marketplace",
+  "owner": {
+    "name": "Mirror"
+  },
+  "plugins": [
+    {
+      "name": "mirror",
+      "description": "Local Claude Code coach for healthier AI-assisted thinking.",
+      "source": ".",
+      "version": "0.1.0"
+    }
+  ]
+}
