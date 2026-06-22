@@ -1,0 +1,22 @@
+[
+  {
+    "uuid": "conv-1",
+    "name": "Data pipeline questions",
+    "created_at": "2026-05-01T00:00:00Z",
+    "updated_at": "2026-05-01T00:10:00Z",
+    "chat_messages": [
+      {
+        "uuid": "m1",
+        "sender": "human",
+        "created_at": "2026-05-01T00:00:00Z",
+        "content": [{"type": "text", "text": "What is a data pipeline?"}]
+      },
+      {
+        "uuid": "m2",
+        "sender": "assistant",
+        "created_at": "2026-05-01T00:01:00Z",
+        "content": [{"type": "text", "text": "A data pipeline moves and transforms data."}]
+      }
+    ]
+  }
+]

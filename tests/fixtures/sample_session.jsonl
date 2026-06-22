@@ -1,0 +1,4 @@
+{"type":"user","uuid":"u1","timestamp":"2026-06-20T10:00:00Z","sessionId":"sample_session","cwd":"/tmp/project","gitBranch":"main","message":{"content":"Fix the auth middleware bug."}}
+{"type":"assistant","uuid":"a1","timestamp":"2026-06-20T10:01:00Z","sessionId":"sample_session","cwd":"/tmp/project","gitBranch":"main","message":{"content":[{"type":"text","text":"I'll patch the middleware."},{"type":"tool_use","id":"tool1","name":"Edit","input":{"file_path":"auth/middleware.py","old_string":"old","new_string":"new"}}]}}
+{"type":"system","uuid":"s1","timestamp":"2026-06-20T10:02:00Z","sessionId":"sample_session","subtype":"compact_boundary"}
+{"type":"user","uuid":"u2","timestamp":"2026-06-20T10:03:00Z","sessionId":"sample_session","cwd":"/tmp/project","gitBranch":"main","message":{"content":"Where is the auth middleware code now?"}}
