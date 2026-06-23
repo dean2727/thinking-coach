@@ -7,5 +7,5 @@ allowed-tools: Bash
 Show Mirror status:
 
 ```bash
-python3 -m uv run --project "${CLAUDE_PLUGIN_ROOT}" mirror status
+uv run --project "${CLAUDE_PLUGIN_ROOT}" mirror status
 ```

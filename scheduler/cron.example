@@ -1,5 +1,6 @@
 # Run Mirror digestion hourly. Edit paths before installing with `crontab -e`.
-0 * * * * cd /path/to/mirror && /usr/bin/python3 -m uv run --project /path/to/mirror mirror digest >> ~/.claude/plugins/data/mirror/cron.log 2>&1
+# Ensure `uv` is on PATH in cron (e.g. set PATH=~/.local/bin:/opt/homebrew/bin:... at top of crontab).
+0 * * * * cd /path/to/mirror && uv run --project /path/to/mirror mirror digest >> ~/.claude/plugins/data/mirror/cron.log 2>&1
 
 # Optional scheduled coach insight export (default off; install only if wanted).
-0 9 * * 1 cd /path/to/mirror && /usr/bin/python3 -m uv run --project /path/to/mirror mirror coach --save >> ~/.claude/plugins/data/mirror/coach.log 2>&1
+0 9 * * 1 cd /path/to/mirror && uv run --project /path/to/mirror mirror coach --save >> ~/.claude/plugins/data/mirror/coach.log 2>&1

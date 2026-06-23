@@ -133,16 +133,87 @@ flowchart TD
   SYNTH --> WRITE[mem0 write]
 ```
 
-## Install for development
+## Developer setup
+
+Mirror is a local Claude Code plugin. **Installing dependencies is a one-time manual step** before you load the plugin. **Onboarding** (goals, storage, models) happens inside Claude Code later and does not install packages.
+
+### Prerequisites
+
+- **Python 3.11+** — `uv` uses this to create the project virtualenv (Homebrew, pyenv, etc.).
+- **Claude Code CLI** — `claude` on your PATH.
+- **`uv`** — the standalone CLI on your PATH (`~/.local/bin/uv` after the official installer).
+
+Check Python:
 
 ```bash
-python3 -m pip install --user uv
-python3 -m uv sync --extra dev
+python3 --version   # should be 3.11+
 ```
 
-Default local mode uses Chroma through OSS mem0. No `MEM0_API_KEY` is required unless you opt into Mem0 Cloud.
+Install `uv` (pick one):
 
-For Claude-backed analysis/coaching, persist your Anthropic API key so hooks and commands can see it:
+```bash
+# Official installer (recommended)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Or Homebrew
+brew install uv
+```
+
+Confirm `uv` is on PATH (restart the shell if needed):
+
+```bash
+uv --version
+which uv            # e.g. ~/.local/bin/uv
+```
+
+### Install plugin dependencies
+
+From the plugin repo:
+
+```bash
+cd /path/to/thinking-coach
+uv sync --extra dev
+```
+
+Or use the helper script:
+
+```bash
+./scripts/dev-setup.sh
+```
+
+Verify the package imports:
+
+```bash
+uv run python -c "import mirror; print('ok:', mirror.__file__)"
+```
+
+This creates a project `.venv` and installs Mirror plus dependencies (`mem0`, `chromadb`, etc.). Default local mode uses Chroma through OSS mem0. No `MEM0_API_KEY` is required unless you opt into Mem0 Cloud.
+
+### Load the plugin in Claude Code
+
+Point Claude Code at the plugin directory (from the parent of the repo, or use an absolute path):
+
+```bash
+claude --plugin-dir ./thinking-coach
+```
+
+Hooks and slash commands invoke:
+
+```bash
+uv run --project "${CLAUDE_PLUGIN_ROOT}" …
+```
+
+Ensure `uv` is on PATH when Claude Code starts. If hooks fail with `uv: command not found`, add `~/.local/bin` to PATH in your shell profile and restart the terminal (or launch Claude Code from that shell).
+
+Validate the plugin manifest (optional):
+
+```bash
+claude plugin validate .
+```
+
+### API keys and optional models
+
+For Claude-backed analysis/coaching, persist your Anthropic API key so hooks and commands inherit it:
 
 ```bash
 echo 'export ANTHROPIC_API_KEY="sk-ant-..."' >> ~/.bashrc
@@ -155,9 +226,34 @@ Ollama can be used for any specialist or coach model:
 export OLLAMA_BASE_URL="http://localhost:11434"
 ```
 
+### First run: install vs onboarding
+
+These are separate steps:
+
+| Step | When | What happens |
+|------|------|----------------|
+| **Install** | Once, before or after cloning | `uv sync`, API keys — prepares the Python environment |
+| **Onboarding** | First time inside Claude Code | Goal questions, storage/model preferences — does **not** install anything |
+
+On **SessionStart**, the plugin hook (`hooks/capture.py`) loads settings from SQLite (`~/.claude/plugins/data/mirror/mirror.db`, `settings.onboarded`). If `onboarded` is false, Claude Code prints a reminder to run `/mirror:onboard`.
+
+`/mirror:onboard` is a guided conversation: Claude asks about your coaching goals, helps configure storage and models, and marks onboarding complete in SQLite. It does not run `uv sync` or install dependencies.
+
+Check onboarding state:
+
+```bash
+uv run --project . mirror status   # "onboarded": true/false
+```
+
+Reset onboarding for testing:
+
+```bash
+uv run --project . mirror settings onboarded false
+```
+
 ## Claude Code plugin commands
 
-- `/mirror:onboard` — first-run setup and guidance.
+- `/mirror:onboard` — first-run goal and configuration conversation (not dependency install).
 - `/mirror:digest` — process new/changed transcripts into Mirror memories.
 - `/mirror:coach` — generate an on-demand coaching report.
 - `/mirror:goals list|add|edit|remove` — manage user goals.
@@ -206,7 +302,7 @@ Each can use `claude/<model>` or `ollama/<model>`.
 ## Testing
 
 ```bash
-python3 -m uv run --extra dev pytest -q
+uv run --extra dev pytest -q
 ```
 
 If the Claude CLI is installed:

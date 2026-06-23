@@ -7,5 +7,5 @@ allowed-tools: Bash
 Run Mirror digestion with optional arguments:
 
 ```bash
-python3 -m uv run --project "${CLAUDE_PLUGIN_ROOT}" mirror digest $ARGUMENTS
+uv run --project "${CLAUDE_PLUGIN_ROOT}" mirror digest $ARGUMENTS
 ```

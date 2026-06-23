@@ -7,5 +7,5 @@ allowed-tools: Bash
 Import a Claude.ai export folder:
 
 ```bash
-python3 -m uv run --project "${CLAUDE_PLUGIN_ROOT}" mirror import-claude-export "$ARGUMENTS"
+uv run --project "${CLAUDE_PLUGIN_ROOT}" mirror import-claude-export "$ARGUMENTS"
 ```

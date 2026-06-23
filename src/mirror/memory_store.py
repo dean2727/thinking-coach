@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from pathlib import Path
 from typing import Any, Protocol
 
 from .paths import expand_plugin_path
@@ -67,6 +68,42 @@ class InMemoryStore:
         return self.records.pop(memory_id, None) is not None
 
 
+def local_mem0_config(settings: MirrorSettings, chroma_path: Path) -> dict[str, Any]:
+    """mem0 2.x config for local Chroma storage without OpenAI defaults."""
+    specialist = settings.llm.specialist("memory_synthesis")
+    if specialist.provider == "ollama":
+        llm: dict[str, Any] = {
+            "provider": "ollama",
+            "config": {
+                "model": specialist.model,
+                "ollama_base_url": settings.llm.ollama_base_url,
+            },
+        }
+    else:
+        llm = {
+            "provider": "anthropic",
+            "config": {
+                "model": specialist.model,
+                "api_key": os.environ.get(settings.llm.claude_api_key_env),
+            },
+        }
+
+    return {
+        "vector_store": {
+            "provider": "chroma",
+            "config": {
+                "collection_name": "mirror_memory",
+                "path": str(chroma_path),
+            },
+        },
+        "embedder": {
+            "provider": "fastembed",
+            "config": {},
+        },
+        "llm": llm,
+    }
+
+
 class Mem0Store:
     def __init__(self, settings: MirrorSettings) -> None:
         self.settings = settings
@@ -85,19 +122,16 @@ class Mem0Store:
 
         chroma_path = expand_plugin_path(settings.chroma_path)
         chroma_path.mkdir(parents=True, exist_ok=True)
-        config = {
-            "vector_store": {
-                "provider": "chromadb",
-                "config": {
-                    "collection_name": "mirror_memory",
-                    "path": str(chroma_path),
-                },
-            }
-        }
-        return Memory.from_config(config)
+        return Memory.from_config(local_mem0_config(settings, chroma_path))
 
     def add_record(self, record: MemoryRecord, *, user_id: str, run_id: str | None = None) -> str | None:
-        result = self.client.add(record.text, user_id=user_id, run_id=run_id, metadata=record.metadata, infer=record.infer)
+        result = self.client.add(
+            record.text,
+            user_id=user_id,
+            run_id=run_id,
+            metadata=chroma_metadata(record.metadata),
+            infer=record.infer,
+        )
         return extract_mem0_id(result)
 
     def search(self, query: str, *, user_id: str, limit: int = 10, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -120,6 +154,23 @@ class Mem0Store:
             return False
         self.client.delete(memory_id=memory_id)
         return True
+
+
+def chroma_metadata(metadata: dict[str, Any]) -> dict[str, str | int | float | bool]:
+    """Chroma metadata values must be str, int, float, or bool — not None or collections."""
+    cleaned: dict[str, str | int | float | bool] = {}
+    for key, value in metadata.items():
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            cleaned[key] = value
+        elif isinstance(value, (int, float, str)):
+            cleaned[key] = value
+        elif isinstance(value, list):
+            cleaned[key] = ", ".join(str(item) for item in value)
+        else:
+            cleaned[key] = str(value)
+    return cleaned
 
 
 def extract_mem0_id(result: Any) -> str | None:
@@ -218,4 +269,4 @@ def goal_record(goal: Goal, *, user_id: str) -> MemoryRecord:
         },
     )
     text = f"Goal: {goal.text}"
-    return MemoryRecord(text=text, memory_type=MemoryType.FACTUAL, mirror_type=MirrorType.GOAL, infer=True, metadata=metadata)
+    return MemoryRecord(text=text, memory_type=MemoryType.FACTUAL, mirror_type=MirrorType.GOAL, infer=False, metadata=metadata)

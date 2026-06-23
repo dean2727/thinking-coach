@@ -7,7 +7,7 @@ allowed-tools: Bash
 Configure Mirror schedules:
 
 ```bash
-python3 -m uv run --project "${CLAUDE_PLUGIN_ROOT}" mirror schedule $ARGUMENTS
+uv run --project "${CLAUDE_PLUGIN_ROOT}" mirror schedule $ARGUMENTS
 ```
 
 Examples:

@@ -7,7 +7,7 @@ allowed-tools: Bash
 View or update Mirror settings:
 
 ```bash
-python3 -m uv run --project "${CLAUDE_PLUGIN_ROOT}" mirror settings $ARGUMENTS
+uv run --project "${CLAUDE_PLUGIN_ROOT}" mirror settings $ARGUMENTS
 ```
 
 Examples:

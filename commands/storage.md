@@ -7,5 +7,5 @@ allowed-tools: Bash
 View or change Mirror storage:
 
 ```bash
-python3 -m uv run --project "${CLAUDE_PLUGIN_ROOT}" mirror storage $ARGUMENTS
+uv run --project "${CLAUDE_PLUGIN_ROOT}" mirror storage $ARGUMENTS
 ```

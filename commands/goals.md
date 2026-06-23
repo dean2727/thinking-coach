@@ -7,5 +7,5 @@ allowed-tools: Bash
 Manage Mirror goals:
 
 ```bash
-python3 -m uv run --project "${CLAUDE_PLUGIN_ROOT}" mirror goals $ARGUMENTS
+uv run --project "${CLAUDE_PLUGIN_ROOT}" mirror goals $ARGUMENTS
 ```
