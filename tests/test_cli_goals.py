@@ -21,3 +21,9 @@ def test_goals_add_accepts_unquoted_words(tmp_path, monkeypatch):
 
     goals = MirrorState(tmp_path / "mirror.db").goals(active_only=True)
     assert goals[0].text == "State one hypothesis"
+
+
+def test_module_entrypoint(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_PLUGIN_DATA", str(tmp_path))
+
+    assert main(["status"]) == 0
