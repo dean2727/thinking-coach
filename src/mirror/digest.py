@@ -14,7 +14,7 @@ from .memory_store import (
 )
 from .schema import MemoryRecord, TranscriptSlice
 from .state import MirrorState
-from .transcript import find_transcripts, parse_transcript
+from .transcript import find_top_level_transcripts, parse_transcript
 
 
 @dataclass
@@ -42,8 +42,16 @@ class DigestRunner:
         self.analyzer = analyzer
         self.user_id = user_id
 
-    async def digest(self, *, transcript_root: Path | None = None, include_scan: bool = True) -> DigestStats:
-        candidates = self._candidate_paths(transcript_root=transcript_root, include_scan=include_scan)
+    async def digest(self) -> DigestStats:
+        # Net-new only: process sessions queued by Stop/SessionEnd hooks.
+        paths = sorted({Path(row["transcript_path"]) for row in self.state.dirty_sessions()})
+        return await self._run([path for path in paths if path.exists()])
+
+    async def seed(self, project_dir: Path) -> DigestStats:
+        # Backfill: mine every top-level transcript in a chosen ~/.claude/projects/<project>.
+        return await self._run(find_top_level_transcripts(project_dir))
+
+    async def _run(self, candidates: list[Path]) -> DigestStats:
         settings = self.state.load_settings()
         semaphore = asyncio.Semaphore(settings.concurrency.max_session_workers)
         stats = DigestStats(sessions_seen=len(candidates))
@@ -60,12 +68,6 @@ class DigestRunner:
 
         await asyncio.gather(*(run_one(path) for path in candidates))
         return stats
-
-    def _candidate_paths(self, *, transcript_root: Path | None, include_scan: bool) -> list[Path]:
-        paths = {Path(row["transcript_path"]) for row in self.state.dirty_sessions()}
-        if include_scan:
-            paths.update(find_transcripts(transcript_root))
-        return sorted(path for path in paths if path.exists())
 
     async def digest_path(self, path: Path) -> int:
         start_line, _ = self.state.watermark(str(path))

@@ -14,6 +14,7 @@ from .coach import coach_from_store
 from .digest import DigestRunner
 from .insights_writer import report_to_markdown, write_report
 from .memory_store import InMemoryStore, Mem0Store, goal_record
+from .paths import list_claude_projects
 from .schema import Goal
 from .state import MirrorState
 
@@ -165,9 +166,61 @@ async def cmd_digest_async(args: argparse.Namespace) -> int:
     state = MirrorState()
     store = build_store(state)
     runner = DigestRunner(state=state, store=store, analyzer=Analyzer(use_llm=False), user_id=user_id())
-    stats = await runner.digest(transcript_root=Path(args.root).expanduser() if args.root else None, include_scan=not args.no_scan)
+    stats = await runner.digest()
     print(json.dumps(stats.__dict__, indent=2))
     return 0
+
+
+def resolve_project(projects: list[Path], selector: str) -> Path | None:
+    # Accept a 1-based list index, an exact folder name, or a unique substring.
+    if selector.isdigit():
+        idx = int(selector) - 1
+        return projects[idx] if 0 <= idx < len(projects) else None
+    for project in projects:
+        if project.name == selector:
+            return project
+    matches = [project for project in projects if selector in project.name]
+    return matches[0] if len(matches) == 1 else None
+
+
+async def cmd_seed_async(args: argparse.Namespace) -> int:
+    projects = list_claude_projects()
+    if not projects:
+        print("No Claude Code projects found under ~/.claude/projects/", file=sys.stderr)
+        return 1
+
+    if args.list or not args.project:
+        if args.project is None and not args.list and sys.stdin.isatty():
+            selected = prompt_for_project(projects)
+            if selected is None:
+                print("No project selected.", file=sys.stderr)
+                return 1
+        else:
+            print(json.dumps([project.name for project in projects], indent=2))
+            return 0
+    else:
+        selected = resolve_project(projects, args.project)
+        if selected is None:
+            print(f"Could not resolve project: {args.project}", file=sys.stderr)
+            return 1
+
+    state = MirrorState()
+    store = build_store(state)
+    runner = DigestRunner(state=state, store=store, analyzer=Analyzer(use_llm=False), user_id=user_id())
+    stats = await runner.seed(selected)
+    print(json.dumps({"project": selected.name, **stats.__dict__}, indent=2))
+    return 0
+
+
+def prompt_for_project(projects: list[Path]) -> Path | None:
+    print("Select a Claude Code project to mine into Mirror memory:\n")
+    for idx, project in enumerate(projects, start=1):
+        count = len(list(project.glob("*.jsonl")))
+        print(f"  {idx}. {project.name} ({count} transcripts)")
+    choice = input("\nProject number (or blank to cancel): ").strip()
+    if not choice:
+        return None
+    return resolve_project(projects, choice)
 
 
 def cmd_coach(args: argparse.Namespace) -> int:
@@ -217,9 +270,12 @@ def build_parser() -> argparse.ArgumentParser:
     goals.set_defaults(func=cmd_goals)
 
     digest = sub.add_parser("digest")
-    digest.add_argument("--root")
-    digest.add_argument("--no-scan", action="store_true")
     digest.set_defaults(async_func=cmd_digest_async)
+
+    seed = sub.add_parser("seed", help="Mine an existing ~/.claude/projects/<project> into memory")
+    seed.add_argument("project", nargs="?", help="project folder name, list index, or unique substring")
+    seed.add_argument("--list", action="store_true", help="list available projects and exit")
+    seed.set_defaults(async_func=cmd_seed_async)
 
     coach = sub.add_parser("coach")
     coach.add_argument("--save", action="store_true")

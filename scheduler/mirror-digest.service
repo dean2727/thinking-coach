@@ -5,4 +5,5 @@ Description=Mirror digest job
 Type=oneshot
 WorkingDirectory=/path/to/mirror
 Environment=PATH=/home/user/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin
+# mirror digest with no flags processes dirty_sessions only.
 ExecStart=uv run --project /path/to/mirror mirror digest

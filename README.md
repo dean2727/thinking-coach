@@ -95,9 +95,11 @@ flowchart LR
 ```mermaid
 flowchart TD
   HOOK["Stop/SessionEnd hook"] --> QUEUE["mirror.db dirty_sessions"]
-  SCAN["Transcript scanner"] --> CANDIDATES["changed transcript candidates"]
+  DIGEST["mirror digest (net-new)"] --> QUEUE
+  SCHED["scheduled / cron digest"] --> QUEUE
+  SEED["mirror seed (pick a project)"] --> SCAN["top-level ~/.claude/projects/<project>/*.jsonl"]
   QUEUE --> PLAN["Build digestion plan"]
-  CANDIDATES --> PLAN
+  SCAN --> PLAN
   PLAN --> WORKERS["bounded parallel workers"]
   WORKERS --> PARSE["parse net-new slice"]
   PARSE --> SPECIALISTS["specialist LLM prompts"]
@@ -254,7 +256,8 @@ uv run --project . mirror settings onboarded false
 ## Claude Code plugin commands
 
 - `/mirror:onboard` — first-run goal and configuration conversation (not dependency install).
-- `/mirror:digest` — process new/changed transcripts into Mirror memories.
+- `/mirror:digest` — process net-new, hook-enqueued sessions (`dirty_sessions`).
+- `/mirror:seed` — pick an existing `~/.claude/projects/<project>` and mine its top-level transcripts into memory (backfill).
 - `/mirror:coach` — generate an on-demand coaching report.
 - `/mirror:goals list|add|edit|remove` — manage user goals.
 - `/mirror:settings` — view/edit storage mode, specialist models, schedules, and output paths.

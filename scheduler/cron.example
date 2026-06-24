@@ -1,4 +1,4 @@
-# Run Mirror digestion hourly. Edit paths before installing with `crontab -e`.
+# Run Mirror digestion hourly (dirty queue only — no filesystem scan). Edit paths before installing with `crontab -e`.
 # Ensure `uv` is on PATH in cron (e.g. set PATH=~/.local/bin:/opt/homebrew/bin:... at top of crontab).
 0 * * * * cd /path/to/mirror && uv run --project /path/to/mirror mirror digest >> ~/.claude/plugins/data/mirror/cron.log 2>&1
 

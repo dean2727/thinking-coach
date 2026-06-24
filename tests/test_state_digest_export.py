@@ -35,7 +35,7 @@ async def test_digest_writes_memories_and_updates_watermark(tmp_path):
     state.enqueue_session("sample_session", str(transcript), reason="test")
 
     runner = DigestRunner(state=state, store=store, analyzer=Analyzer(), user_id="tester")
-    stats = await runner.digest(include_scan=False)
+    stats = await runner.digest()
 
     assert stats.sessions_processed == 1
     assert stats.memories_written >= 2
@@ -96,6 +96,49 @@ async def test_digest_prunes_stale_slice_links(tmp_path):
 
     assert state.memory_link(stale_local_id) is None
     assert stale_mem0 not in store.records
+
+
+@pytest.mark.asyncio
+async def test_digest_only_processes_dirty_sessions(tmp_path):
+    state = MirrorState(tmp_path / "mirror.db")
+    store = InMemoryStore()
+    transcript = FIXTURES / "sample_session.jsonl"
+    runner = DigestRunner(state=state, store=store, analyzer=Analyzer(), user_id="tester")
+
+    stats = await runner.digest()
+
+    assert stats.sessions_seen == 0
+    assert stats.memories_written == 0
+    assert state.watermark(str(transcript)) == (0, None)
+
+
+@pytest.mark.asyncio
+async def test_seed_mines_project_dir_and_ignores_dirty_queue(tmp_path):
+    state = MirrorState(tmp_path / "mirror.db")
+    store = InMemoryStore()
+    transcript = FIXTURES / "sample_session.jsonl"
+    state.enqueue_session("other", "/tmp/not-a-real-session.jsonl", reason="Stop")
+
+    runner = DigestRunner(state=state, store=store, analyzer=Analyzer(), user_id="tester")
+    stats = await runner.seed(FIXTURES)
+
+    assert stats.sessions_seen >= 1
+    assert stats.memories_written >= 2
+    assert state.watermark(str(transcript))[0] == 4
+    # seed does not touch the hook-enqueued dirty queue
+    assert len(state.dirty_sessions()) == 1
+
+
+def test_seed_only_finds_top_level_transcripts(tmp_path):
+    from mirror.transcript import find_top_level_transcripts
+
+    (tmp_path / "a.jsonl").write_text("{}\n")
+    nested = tmp_path / "subagents"
+    nested.mkdir()
+    (nested / "b.jsonl").write_text("{}\n")
+
+    found = {p.name for p in find_top_level_transcripts(tmp_path)}
+    assert found == {"a.jsonl"}
 
 
 def test_insight_writer_uses_datetime_filename(tmp_path):

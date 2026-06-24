@@ -180,3 +180,10 @@ def find_transcripts(root: Path | None = None) -> list[Path]:
     if not root.exists():
         return []
     return sorted(root.glob("**/*.jsonl"), key=lambda p: p.stat().st_mtime)
+
+
+def find_top_level_transcripts(project_dir: Path) -> list[Path]:
+    # Top-level session files only; nested subagents/ and tool-results/ are skipped.
+    if not project_dir.exists():
+        return []
+    return sorted(project_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
