@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .analysis import Analyzer
+from .cleanup import clear_session_memories
 from .memory_store import (
     MemoryStore,
     assimilation_record,
@@ -58,10 +59,7 @@ class DigestRunner:
         return await self._run(paths)
 
     def _clear_session_memories(self, session_id: str) -> None:
-        for link in self.state.memory_links_for_session(session_id):
-            if link["mem0_id"]:
-                self.store.delete(link["mem0_id"])
-            self.state.delete_memory_link(link["local_id"])
+        clear_session_memories(self.state, self.store, session_id)
 
     async def _run(self, candidates: list[Path]) -> DigestStats:
         settings = self.state.load_settings()

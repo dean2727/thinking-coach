@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .analysis import Analyzer
 from .claude_export import import_claude_export
+from .cleanup import run_cleanup
 from .coach import coach_from_store
 from .digest import DigestRunner
 from .insights_writer import report_to_markdown, write_report
@@ -283,6 +284,21 @@ def prompt_for_project(projects: list[Path]) -> Path | None:
     return resolve_project(projects, choice)
 
 
+def cmd_cleanup(args: argparse.Namespace) -> int:
+    state = MirrorState()
+    store = build_store(state)
+    stats = run_cleanup(
+        state,
+        store,
+        user_id(),
+        orphans=args.orphans,
+        session_id=args.session,
+        dry_run=args.dry_run,
+    )
+    print(json.dumps(stats.__dict__, indent=2))
+    return 0
+
+
 def cmd_coach(args: argparse.Namespace) -> int:
     state = MirrorState()
     store = build_store(state)
@@ -343,6 +359,16 @@ def build_parser() -> argparse.ArgumentParser:
     seed.add_argument("--list", action="store_true", help="list available projects and exit")
     seed.add_argument("--force", action="store_true", help="re-process all transcripts even if already digested")
     seed.set_defaults(async_func=cmd_seed_async)
+
+    cleanup = sub.add_parser("cleanup", help="Remove broken memory links and optional orphan Chroma rows")
+    cleanup.add_argument(
+        "--orphans",
+        action="store_true",
+        help="delete Chroma memories not referenced by memory_links or goals",
+    )
+    cleanup.add_argument("--session", metavar="SESSION_ID", help="clear all memories for one session")
+    cleanup.add_argument("--dry-run", action="store_true", help="report what would be removed without deleting")
+    cleanup.set_defaults(func=cmd_cleanup)
 
     coach = sub.add_parser("coach")
     coach.add_argument("--save", action="store_true")

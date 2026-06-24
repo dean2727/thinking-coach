@@ -313,3 +313,55 @@ If the Claude CLI is installed:
 ```bash
 claude plugin validate .
 ```
+
+## Local memory development
+
+Mirror stores distilled memories in SQLite (`memory_links`, watermarks, goals) and Chroma (`~/.claude/plugins/data/mirror/chroma` by default). These commands help when iterating on digest, seed, or coach locally.
+
+### Browse Chroma
+
+Start a local Chroma server against Mirror's persistence directory:
+
+```bash
+uv run chroma run --path ~/.claude/plugins/data/mirror/chroma --host localhost --port 8000
+```
+
+Then use the Chroma dashboard or `uv run chroma browse` against `http://localhost:8000`. Mirror itself talks to Chroma through mem0's embedded client; the server is only for inspection.
+
+### Clean up memory state
+
+Remove broken `memory_links` rows left behind by failed writes (null `mem0_id`):
+
+```bash
+uv run --project . mirror cleanup
+```
+
+Also delete Chroma rows that are no longer referenced by `memory_links` or goals:
+
+```bash
+uv run --project . mirror cleanup --orphans
+```
+
+Preview without deleting:
+
+```bash
+uv run --project . mirror cleanup --orphans --dry-run
+```
+
+Clear one session's memories and links:
+
+```bash
+uv run --project . mirror cleanup --session <session-id>
+```
+
+Re-digest a project from scratch (clears each session's memories, resets watermarks, then re-seeds):
+
+```bash
+uv run --project . mirror seed --project <selector> --force
+```
+
+List projects available for seeding:
+
+```bash
+uv run --project . mirror seed --list
+```
