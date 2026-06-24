@@ -21,6 +21,7 @@ from .transcript import find_top_level_transcripts, parse_transcript
 class DigestStats:
     sessions_seen: int = 0
     sessions_processed: int = 0
+    sessions_up_to_date: int = 0
     memories_written: int = 0
     errors: int = 0
 
@@ -47,9 +48,20 @@ class DigestRunner:
         paths = sorted({Path(row["transcript_path"]) for row in self.state.dirty_sessions()})
         return await self._run([path for path in paths if path.exists()])
 
-    async def seed(self, project_dir: Path) -> DigestStats:
+    async def seed(self, project_dir: Path, *, force: bool = False) -> DigestStats:
         # Backfill: mine every top-level transcript in a chosen ~/.claude/projects/<project>.
-        return await self._run(find_top_level_transcripts(project_dir))
+        paths = find_top_level_transcripts(project_dir)
+        if force:
+            for path in paths:
+                self.state.clear_watermark(str(path))
+                self._clear_session_memories(path.stem)
+        return await self._run(paths)
+
+    def _clear_session_memories(self, session_id: str) -> None:
+        for link in self.state.memory_links_for_session(session_id):
+            if link["mem0_id"]:
+                self.store.delete(link["mem0_id"])
+            self.state.delete_memory_link(link["local_id"])
 
     async def _run(self, candidates: list[Path]) -> DigestStats:
         settings = self.state.load_settings()
@@ -61,7 +73,10 @@ class DigestRunner:
                 try:
                     written = await self.digest_path(path)
                     stats.sessions_processed += 1
-                    stats.memories_written += written
+                    if written:
+                        stats.memories_written += written
+                    else:
+                        stats.sessions_up_to_date += 1
                 except Exception as exc:  # pragma: no cover - covered by integration behavior
                     stats.errors += 1
                     self.state.record_digest_error(None, str(path), str(exc))
@@ -116,6 +131,9 @@ class DigestRunner:
                 mem0_id = self.store.add_record(record, user_id=self.user_id, run_id=run_id)
         else:
             mem0_id = self.store.add_record(record, user_id=self.user_id, run_id=run_id)
+
+        if not mem0_id:
+            raise RuntimeError(f"failed to persist {record.mirror_type.value} memory ({local_id})")
 
         self.state.record_memory_link(local_id, mem0_id, record.mirror_type.value, chat_slice.session_id)
         return 1

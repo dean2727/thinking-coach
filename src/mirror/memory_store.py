@@ -125,23 +125,37 @@ class Mem0Store:
         return Memory.from_config(local_mem0_config(settings, chroma_path))
 
     def add_record(self, record: MemoryRecord, *, user_id: str, run_id: str | None = None) -> str | None:
+        metadata = chroma_metadata(record.metadata)
         result = self.client.add(
             record.text,
             user_id=user_id,
             run_id=run_id,
-            metadata=chroma_metadata(record.metadata),
+            metadata=metadata,
             infer=record.infer,
         )
-        return extract_mem0_id(result)
+        mem0_id = extract_mem0_id(result)
+        # infer=True asks mem0 to re-synthesize via LLM; when that fails it returns no ids.
+        # Fall back to storing the Mirror-distilled text directly.
+        if mem0_id is None and record.infer:
+            result = self.client.add(
+                record.text,
+                user_id=user_id,
+                run_id=run_id,
+                metadata=metadata,
+                infer=False,
+            )
+            mem0_id = extract_mem0_id(result)
+        return mem0_id
 
     def search(self, query: str, *, user_id: str, limit: int = 10, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         merged = {"user_id": user_id, "mirror_namespace": "mirror"}
         if filters:
             merged.update(filters)
         try:
-            return list(self.client.search(query, filters=merged, top_k=limit, rerank=True))
+            raw = self.client.search(query, filters=merged, top_k=limit, rerank=True)
         except TypeError:
-            return list(self.client.search(query, user_id=user_id, limit=limit))
+            raw = self.client.search(query, user_id=user_id, limit=limit)
+        return normalize_search_results(raw)
 
     def update(self, memory_id: str, text: str) -> bool:
         if not hasattr(self.client, "update"):
@@ -171,6 +185,18 @@ def chroma_metadata(metadata: dict[str, Any]) -> dict[str, str | int | float | b
         else:
             cleaned[key] = str(value)
     return cleaned
+
+
+def normalize_search_results(raw: Any) -> list[dict[str, Any]]:
+    if isinstance(raw, list):
+        return [item for item in raw if isinstance(item, dict)]
+    if isinstance(raw, dict):
+        results = raw.get("results")
+        if isinstance(results, list):
+            return [item for item in results if isinstance(item, dict)]
+        if raw.get("id") or raw.get("memory") or raw.get("text"):
+            return [raw]
+    return []
 
 
 def extract_mem0_id(result: Any) -> str | None:
@@ -206,7 +232,7 @@ def observation_record(observation: Observation, *, user_id: str, session_id: st
         },
     )
     text = f"{observation.dimension.value}: {observation.claim}\nEvidence: {observation.evidence}"
-    return MemoryRecord(text=text, memory_type=MemoryType.FACTUAL, mirror_type=MirrorType.OBSERVATION, infer=True, metadata=metadata)
+    return MemoryRecord(text=text, memory_type=MemoryType.FACTUAL, mirror_type=MirrorType.OBSERVATION, infer=False, metadata=metadata)
 
 
 def assimilation_record(signal: AssimilationSignal, *, user_id: str) -> MemoryRecord:
@@ -224,7 +250,7 @@ def assimilation_record(signal: AssimilationSignal, *, user_id: str) -> MemoryRe
         },
     )
     text = f"Assimilation signal: {signal.later_question}"
-    return MemoryRecord(text=text, memory_type=MemoryType.FACTUAL, mirror_type=MirrorType.ASSIMILATION_SIGNAL, infer=True, metadata=metadata)
+    return MemoryRecord(text=text, memory_type=MemoryType.FACTUAL, mirror_type=MirrorType.ASSIMILATION_SIGNAL, infer=False, metadata=metadata)
 
 
 def session_summary_record(summary: SessionSummary, *, user_id: str, source: SourceKind = SourceKind.CLAUDE_CODE) -> MemoryRecord:
@@ -253,7 +279,7 @@ def topic_record(topic: Topic, *, user_id: str) -> MemoryRecord:
         extra={"aliases": topic.aliases, "depth_trend": topic.depth_trend},
     )
     text = f"Topic: {topic.name}; aliases: {', '.join(topic.aliases)}; depth trend: {topic.depth_trend}"
-    return MemoryRecord(text=text, memory_type=MemoryType.SEMANTIC, mirror_type=MirrorType.TOPIC, infer=True, metadata=metadata)
+    return MemoryRecord(text=text, memory_type=MemoryType.SEMANTIC, mirror_type=MirrorType.TOPIC, infer=False, metadata=metadata)
 
 
 def goal_record(goal: Goal, *, user_id: str) -> MemoryRecord:

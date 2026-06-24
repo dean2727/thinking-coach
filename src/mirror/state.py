@@ -155,6 +155,10 @@ class MirrorState:
                 (transcript_path, session_id, line_index, last_uuid, utc_iso()),
             )
 
+    def clear_watermark(self, transcript_path: str) -> None:
+        with self.connect() as conn:
+            conn.execute("DELETE FROM ingest_watermarks WHERE transcript_path = ?", (transcript_path,))
+
     def save_goal(self, goal: Goal) -> None:
         with self.connect() as conn:
             conn.execute(
@@ -209,6 +213,15 @@ class MirrorState:
             )
 
     # Remove a link after pruning its Chroma row during slice cleanup.
+    def memory_links_for_session(self, session_id: str) -> list[sqlite3.Row]:
+        with self.connect() as conn:
+            return list(
+                conn.execute(
+                    "SELECT * FROM memory_links WHERE session_id = ? ORDER BY local_id",
+                    (session_id,),
+                )
+            )
+
     def delete_memory_link(self, local_id: str) -> None:
         with self.connect() as conn:
             conn.execute("DELETE FROM memory_links WHERE local_id = ?", (local_id,))

@@ -14,7 +14,7 @@ from .coach import coach_from_store
 from .digest import DigestRunner
 from .insights_writer import report_to_markdown, write_report
 from .memory_store import InMemoryStore, Mem0Store, goal_record
-from .paths import list_claude_projects
+from .paths import friendly_project_label, list_claude_projects
 from .schema import Goal
 from .state import MirrorState
 
@@ -171,16 +171,77 @@ async def cmd_digest_async(args: argparse.Namespace) -> int:
     return 0
 
 
+def normalize_seed_argv(argv: list[str]) -> list[str]:
+    # Claude project folders start with "-Users-...". Rewrite bare selectors so argparse
+    # does not treat them as flags. Use --project=VALUE when VALUE starts with "-".
+    if not argv or argv[0] != "seed":
+        return argv
+    rest = argv[1:]
+    if not rest or rest[0] in ("--list", "-h", "--help") or rest[0] in ("--project", "-p"):
+        return argv
+    if rest[0] == "--":
+        if len(rest) >= 2:
+            return _seed_with_project(rest[1], rest[2:])
+        return argv
+    return _seed_with_project(rest[0], rest[1:])
+
+
+def _seed_with_project(selector: str, tail: list[str]) -> list[str]:
+    if selector.startswith("-"):
+        return [f"seed", f"--project={selector}", *tail]
+    return ["seed", "--project", selector, *tail]
+
+
+def project_choices(projects: list[Path]) -> list[dict[str, object]]:
+    choices = []
+    for idx, project in enumerate(projects, start=1):
+        choices.append(
+            {
+                "index": idx,
+                "name": project.name,
+                "label": friendly_project_label(project.name),
+                "transcripts": len(list(project.glob("*.jsonl"))),
+            }
+        )
+    return choices
+
+
 def resolve_project(projects: list[Path], selector: str) -> Path | None:
-    # Accept a 1-based list index, an exact folder name, or a unique substring.
+    # Accept a 1-based list index, folder name, friendly label, or unique substring.
     if selector.isdigit():
         idx = int(selector) - 1
         return projects[idx] if 0 <= idx < len(projects) else None
     for project in projects:
-        if project.name == selector:
+        if project.name == selector or friendly_project_label(project.name) == selector:
             return project
-    matches = [project for project in projects if selector in project.name]
+    matches = [
+        project
+        for project in projects
+        if selector in project.name or selector in friendly_project_label(project.name)
+    ]
     return matches[0] if len(matches) == 1 else None
+
+
+def seed_result_payload(project: Path, stats) -> dict:
+    payload = {
+        "project": project.name,
+        "label": friendly_project_label(project.name),
+        **stats.__dict__,
+    }
+    if stats.sessions_seen and stats.memories_written == 0 and stats.sessions_up_to_date == stats.sessions_seen:
+        payload["status"] = "up_to_date"
+        payload["message"] = (
+            "All transcripts in this project were already digested; memories are in storage. "
+            "Nothing new to process."
+        )
+    elif stats.memories_written > 0:
+        payload["status"] = "seeded"
+    elif stats.sessions_seen == 0:
+        payload["status"] = "empty"
+        payload["message"] = "No top-level .jsonl transcripts found in this project folder."
+    else:
+        payload["status"] = "completed"
+    return payload
 
 
 async def cmd_seed_async(args: argparse.Namespace) -> int:
@@ -196,7 +257,7 @@ async def cmd_seed_async(args: argparse.Namespace) -> int:
                 print("No project selected.", file=sys.stderr)
                 return 1
         else:
-            print(json.dumps([project.name for project in projects], indent=2))
+            print(json.dumps(project_choices(projects), indent=2))
             return 0
     else:
         selected = resolve_project(projects, args.project)
@@ -207,16 +268,15 @@ async def cmd_seed_async(args: argparse.Namespace) -> int:
     state = MirrorState()
     store = build_store(state)
     runner = DigestRunner(state=state, store=store, analyzer=Analyzer(use_llm=False), user_id=user_id())
-    stats = await runner.seed(selected)
-    print(json.dumps({"project": selected.name, **stats.__dict__}, indent=2))
+    stats = await runner.seed(selected, force=args.force)
+    print(json.dumps(seed_result_payload(selected, stats), indent=2))
     return 0
 
 
 def prompt_for_project(projects: list[Path]) -> Path | None:
     print("Select a Claude Code project to mine into Mirror memory:\n")
-    for idx, project in enumerate(projects, start=1):
-        count = len(list(project.glob("*.jsonl")))
-        print(f"  {idx}. {project.name} ({count} transcripts)")
+    for choice in project_choices(projects):
+        print(f"  {choice['index']}. {choice['label']} ({choice['transcripts']} transcripts)")
     choice = input("\nProject number (or blank to cancel): ").strip()
     if not choice:
         return None
@@ -273,8 +333,15 @@ def build_parser() -> argparse.ArgumentParser:
     digest.set_defaults(async_func=cmd_digest_async)
 
     seed = sub.add_parser("seed", help="Mine an existing ~/.claude/projects/<project> into memory")
-    seed.add_argument("project", nargs="?", help="project folder name, list index, or unique substring")
+    seed.add_argument(
+        "--project",
+        "-p",
+        dest="project",
+        metavar="SELECTOR",
+        help="1-based index, friendly label, folder name, or unique substring",
+    )
     seed.add_argument("--list", action="store_true", help="list available projects and exit")
+    seed.add_argument("--force", action="store_true", help="re-process all transcripts even if already digested")
     seed.set_defaults(async_func=cmd_seed_async)
 
     coach = sub.add_parser("coach")
@@ -290,6 +357,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
+    argv = normalize_seed_argv(list(argv) if argv is not None else sys.argv[1:])
     args = parser.parse_args(argv)
     if hasattr(args, "async_func"):
         return asyncio.run(args.async_func(args))

@@ -27,6 +27,17 @@ def list_claude_projects() -> list[Path]:
     return sorted((p for p in root.iterdir() if p.is_dir()), key=lambda p: p.name)
 
 
+def friendly_project_label(folder_name: str) -> str:
+    # "-Users-deanorenstein-Documents-projects-hud" -> "projects-hud"
+    for prefix in ("-Users-", "-users-"):
+        if folder_name.startswith(prefix):
+            remainder = folder_name[len(prefix) :]
+            if "Documents-" in remainder:
+                remainder = remainder.split("Documents-", 1)[1]
+            return remainder
+    return folder_name
+
+
 def coaching_sessions_dir() -> Path:
     return Path.home() / ".claude" / "coaching-sessions"
 

@@ -128,6 +128,10 @@ async def test_seed_mines_project_dir_and_ignores_dirty_queue(tmp_path):
     # seed does not touch the hook-enqueued dirty queue
     assert len(state.dirty_sessions()) == 1
 
+    second = await runner.seed(FIXTURES)
+    assert second.memories_written == 0
+    assert second.sessions_up_to_date == second.sessions_seen
+
 
 def test_seed_only_finds_top_level_transcripts(tmp_path):
     from mirror.transcript import find_top_level_transcripts
