@@ -4,10 +4,10 @@ import pytest
 
 from mirror.analysis import Analyzer
 from mirror.claude_export import import_claude_export, load_conversations, schema_fingerprint
-from mirror.digest import DigestRunner
+from mirror.digest import DigestRunner, slice_local_id
 from mirror.insights_writer import report_filename, write_report
 from mirror.memory_store import InMemoryStore
-from mirror.schema import CoachingReport, Goal
+from mirror.schema import CoachingReport, Goal, MemoryRecord, MemoryType, MirrorType
 from mirror.state import MirrorState
 
 
@@ -54,6 +54,48 @@ async def test_digest_is_idempotent_with_watermark(tmp_path):
     second = await runner.digest_path(transcript)
 
     assert second == 0
+
+
+@pytest.mark.asyncio
+async def test_digest_retry_replaces_not_duplicates(tmp_path):
+    state = MirrorState(tmp_path / "mirror.db")
+    store = InMemoryStore()
+    transcript = FIXTURES / "sample_session.jsonl"
+    runner = DigestRunner(state=state, store=store, analyzer=Analyzer(), user_id="tester")
+
+    await runner.digest_path(transcript)
+    count_after_first = len(store.records)
+
+    state.save_watermark(str(transcript), "sample_session", 0, None)
+
+    await runner.digest_path(transcript)
+
+    assert len(store.records) == count_after_first
+
+
+@pytest.mark.asyncio
+async def test_digest_prunes_stale_slice_links(tmp_path):
+    state = MirrorState(tmp_path / "mirror.db")
+    store = InMemoryStore()
+    transcript = FIXTURES / "sample_session.jsonl"
+    stale_local_id = slice_local_id("sample_session", 0, 4, MirrorType.OBSERVATION.value, 99)
+    stale_mem0 = store.add_record(
+        MemoryRecord(
+            text="stale orphan",
+            memory_type=MemoryType.FACTUAL,
+            mirror_type=MirrorType.OBSERVATION,
+            infer=False,
+            metadata={"mirror_namespace": "mirror"},
+        ),
+        user_id="tester",
+    )
+    state.record_memory_link(stale_local_id, stale_mem0, MirrorType.OBSERVATION.value, "sample_session")
+
+    runner = DigestRunner(state=state, store=store, analyzer=Analyzer(), user_id="tester")
+    await runner.digest_path(transcript)
+
+    assert state.memory_link(stale_local_id) is None
+    assert stale_mem0 not in store.records
 
 
 def test_insight_writer_uses_datetime_filename(tmp_path):

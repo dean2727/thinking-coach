@@ -193,6 +193,26 @@ class MirrorState:
                 (local_id, mem0_id, mirror_type, session_id, utc_iso()),
             )
 
+    # Lookups for idempotent digest: map stable local ids to mem0 rows per slice.
+    def memory_link(self, local_id: str) -> sqlite3.Row | None:
+        with self.connect() as conn:
+            return conn.execute("SELECT * FROM memory_links WHERE local_id = ?", (local_id,)).fetchone()
+
+    # prefix is slice_link_prefix(), e.g. "{session_id}:{start}-{end}:"
+    def memory_links_with_prefix(self, prefix: str) -> list[sqlite3.Row]:
+        with self.connect() as conn:
+            return list(
+                conn.execute(
+                    "SELECT * FROM memory_links WHERE local_id LIKE ? ORDER BY local_id",
+                    (f"{prefix}%",),
+                )
+            )
+
+    # Remove a link after pruning its Chroma row during slice cleanup.
+    def delete_memory_link(self, local_id: str) -> None:
+        with self.connect() as conn:
+            conn.execute("DELETE FROM memory_links WHERE local_id = ?", (local_id,))
+
     def record_digest_error(self, session_id: str | None, transcript_path: str | None, error: str) -> None:
         with self.connect() as conn:
             conn.execute(

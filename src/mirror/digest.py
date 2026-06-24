@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from .memory_store import (
     observation_record,
     session_summary_record,
 )
-from .schema import MemoryRecord
+from .schema import MemoryRecord, TranscriptSlice
 from .state import MirrorState
 from .transcript import find_transcripts, parse_transcript
 
@@ -22,6 +23,16 @@ class DigestStats:
     sessions_processed: int = 0
     memories_written: int = 0
     errors: int = 0
+
+
+# Stable keys for memory_links: scoped to a transcript line range so retries
+# replace the same Chroma rows instead of creating duplicates.
+def slice_local_id(session_id: str, start_line: int, end_line: int, mirror_type: str, index: int) -> str:
+    return f"{session_id}:{start_line}-{end_line}:{mirror_type}:{index}"
+
+
+def slice_link_prefix(session_id: str, start_line: int, end_line: int) -> str:
+    return f"{session_id}:{start_line}-{end_line}:"
 
 
 class DigestRunner:
@@ -58,23 +69,62 @@ class DigestRunner:
 
     async def digest_path(self, path: Path) -> int:
         start_line, _ = self.state.watermark(str(path))
-        slice_ = parse_transcript(path, start_line=start_line)
-        if slice_.is_empty:
-            self.state.save_watermark(str(path), slice_.session_id, slice_.end_line, slice_.last_uuid)
-            self.state.clear_dirty_session(slice_.session_id)
+        chat_slice = parse_transcript(path, start_line=start_line)
+        if chat_slice.is_empty:
+            self.state.save_watermark(str(path), chat_slice.session_id, chat_slice.end_line, chat_slice.last_uuid)
+            self.state.clear_dirty_session(chat_slice.session_id)
             return 0
 
-        result = await self.analyzer.analyze(slice_, active_goals=[goal.text for goal in self.state.goals(active_only=True)])
+        result = await self.analyzer.analyze(chat_slice, active_goals=[goal.text for goal in self.state.goals(active_only=True)])
         records: list[MemoryRecord] = [session_summary_record(result.summary, user_id=self.user_id)]
-        records.extend(observation_record(obs, user_id=self.user_id, session_id=slice_.session_id) for obs in result.observations)
+        records.extend(observation_record(obs, user_id=self.user_id, session_id=chat_slice.session_id) for obs in result.observations)
         records.extend(assimilation_record(sig, user_id=self.user_id) for sig in result.assimilation_signals)
 
+        # Upsert each memory by slice-local id so interrupted digests can safely retry.
+        type_counters: defaultdict[str, int] = defaultdict(int)
+        kept_local_ids: set[str] = set()
         written = 0
-        for idx, record in enumerate(records):
-            mem0_id = self.store.add_record(record, user_id=self.user_id, run_id=slice_.session_id if record.memory_type.value == "episodic" else None)
-            self.state.record_memory_link(f"{slice_.session_id}:{idx}", mem0_id, record.mirror_type.value, slice_.session_id)
-            written += 1
+        for record in records:
+            mirror_type = record.mirror_type.value
+            index = type_counters[mirror_type]
+            type_counters[mirror_type] += 1
+            local_id = slice_local_id(chat_slice.session_id, chat_slice.start_line, chat_slice.end_line, mirror_type, index)
+            written += self._persist_record(chat_slice, local_id, record)
+            kept_local_ids.add(local_id)
 
-        self.state.save_watermark(str(path), slice_.session_id, slice_.end_line, slice_.last_uuid)
-        self.state.clear_dirty_session(slice_.session_id)
+        # Drop Chroma rows left over from a partial write of this slice.
+        self._prune_stale_slice_links(chat_slice, kept_local_ids)
+
+        self.state.save_watermark(str(path), chat_slice.session_id, chat_slice.end_line, chat_slice.last_uuid)
+        self.state.clear_dirty_session(chat_slice.session_id)
         return written
+
+    def _persist_record(self, chat_slice: TranscriptSlice, local_id: str, record: MemoryRecord) -> int:
+        # Reuse the existing mem0 id when possible; delete+add only if update fails.
+        run_id = chat_slice.session_id if record.memory_type.value == "episodic" else None
+        existing = self.state.memory_link(local_id)
+        mem0_id: str | None
+
+        if existing and existing["mem0_id"]:
+            old_id = existing["mem0_id"]
+            if self.store.update(old_id, record.text):
+                mem0_id = old_id
+            else:
+                self.store.delete(old_id)
+                mem0_id = self.store.add_record(record, user_id=self.user_id, run_id=run_id)
+        else:
+            mem0_id = self.store.add_record(record, user_id=self.user_id, run_id=run_id)
+
+        self.state.record_memory_link(local_id, mem0_id, record.mirror_type.value, chat_slice.session_id)
+        return 1
+
+    def _prune_stale_slice_links(self, slice_, kept_local_ids: set[str]) -> None:
+        # e.g. observation:3 written before an interrupt but absent on the next run.
+        prefix = slice_link_prefix(slice_.session_id, slice_.start_line, slice_.end_line)
+        for link in self.state.memory_links_with_prefix(prefix):
+            local_id = link["local_id"]
+            if local_id in kept_local_ids:
+                continue
+            if link["mem0_id"]:
+                self.store.delete(link["mem0_id"])
+            self.state.delete_memory_link(local_id)
